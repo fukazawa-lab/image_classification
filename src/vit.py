@@ -86,7 +86,8 @@ def train_model(train_df, val_df, class_names, data_folder, num_labels=10, dropo
 
     return trainer
 
-def evaluate_model(trainer, val_df, class_names, data_folder):
+
+def evaluate_model(trainer, val_df, class_names, data_folder, test_file_names):
     # バリデーションデータセットの初期化
     feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224-in21k')
     val_dataset = CustomDataset(val_df, feature_extractor, data_folder)
@@ -130,13 +131,13 @@ def evaluate_model(trainer, val_df, class_names, data_folder):
     results_df = pd.DataFrame(predictions.predictions, columns=[f'Class_{i}' for i in range(len(class_names))])
     results_df['True_Label'] = labels
     results_df['Predicted_Label'] = preds
-    results_df['Image_Filename'] = val_df['id']
+    results_df['File_Name'] = test_file_names  # ファイル名を追加
     
     # クラス名を列として使用
     results_df = results_df.rename(columns={f'Class_{i}': class_name for i, class_name in enumerate(class_names)})
     
     results_df.to_csv('predictions.csv', index=False)
-
+    
 if __name__ == "__main__":
     # 例としてデータフレームとクラス名を設定します。実際にはこれらを適切に定義してください。
     class_names = ["class1", "class2", "class3"]  # 例としてクラス名を設定
