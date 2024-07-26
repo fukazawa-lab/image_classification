@@ -129,8 +129,8 @@ def evaluate_model(trainer, val_df, class_names, data_folder, test_file_names):
 
     # 予測結果をCSVに保存
     results_df = pd.DataFrame(predictions.predictions, columns=[f'Class_{i}' for i in range(len(class_names))])
-    results_df['True_Label'] = labels
-    results_df['Predicted_Label'] = preds
+    results_df['True_Label'] = [class_names[label] for label in labels]
+    results_df['Predicted_Label'] = [class_names[pred] for pred in preds]
     results_df['File_Name'] = test_file_names  # ファイル名を追加
     
     # クラス名を列として使用
