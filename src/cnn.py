@@ -71,24 +71,31 @@ def build_and_train_model(x_train, y_train, x_test, y_test, num_classes):
 
     return model
 
-
 def save_predictions_to_csv(model, x_test, y_test, class_names, test_file_names):
     # 予測の取得
     predictions = model.predict(x_test)
     predicted_classes = np.argmax(predictions, axis=1)
     predicted_probabilities = predictions
     
+    # クラスラベルをクラス名に変換
+    predicted_labels = [class_names[i] for i in predicted_classes]
+    
+    # `y_test`がNumPy配列で、整数ラベルであると仮定
+    true_labels = [class_names[i] for i in np.argmax(y_test, axis=1)]
+    
     # 予測結果の DataFrame を作成
     results = {
         'file_name': test_file_names,  # ファイル名を追加
-        'predicted_class': predicted_classes,
+        'True_Label': true_labels,     # 真のラベル
+        'Predicted_Label': predicted_labels,  # 予測ラベル
     }
     
     for i, class_name in enumerate(class_names):
-        results[f'prob_{class_name}'] = predicted_probabilities[:, i]
+        results[f'{class_name}'] = predicted_probabilities[:, i]
 
     results_df = pd.DataFrame(results)
     results_df.to_csv('predictions.csv', index=False)
+
 
 def plot_confusion_matrix(y_true, y_pred, class_names):
     cm = confusion_matrix(y_true, y_pred)
