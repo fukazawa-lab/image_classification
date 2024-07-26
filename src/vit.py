@@ -9,8 +9,6 @@ from PIL import Image
 import sklearn.metrics as metrics
 import matplotlib.pyplot as plt
 import seaborn as sns
-from transformers import ViTImageProcessor
-
 
 # データセットクラスの定義
 class CustomDataset(Dataset):
@@ -40,7 +38,7 @@ def collate_fn(batch):
     
 def train_model(train_df, val_df, class_names, data_folder, num_labels=10, dropout_prob=0.1):
     # Feature extractorとデータセットの初期化
-    feature_extractor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
+    feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224-in21k')
     train_dataset = CustomDataset(train_df, feature_extractor, data_folder)
     val_dataset = CustomDataset(val_df, feature_extractor, data_folder)  # バリデーションデータセットの追加
 
@@ -136,7 +134,7 @@ def evaluate_model(trainer, val_df, class_names, data_folder, test_file_names):
     # クラス名を列として使用
     results_df = results_df.rename(columns={f'Class_{i}': class_name for i, class_name in enumerate(class_names)})
     
-    results_df.to_csv('predictions.csv', index=False)
+    results_df.to_csv('predictions_vit.csv', index=False)
     
 if __name__ == "__main__":
     # 例としてデータフレームとクラス名を設定します。実際にはこれらを適切に定義してください。
@@ -146,7 +144,7 @@ if __name__ == "__main__":
     val_df = pd.DataFrame(data)  # バリデーションデータフレーム
 
     # モデルの訓練
-    trainer = train_model(train_df, class_names)
+    trainer = train_model(train_df, val_df, class_names, "path_to_images_folder")
     
     # モデルの評価
-    evaluate_model(trainer, val_df, class_names)
+    evaluate_model(trainer, val_df, class_names, "path_to_images_folder", val_df['id'].tolist())
