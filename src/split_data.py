@@ -27,12 +27,14 @@ def create_dataset(data_parent_dir, class_names, test_size=0.2, random_state=42)
 def load_images(df, image_dir, num_classes):
     images = []
     labels = []
+    file_names = []  # ファイル名を保存するリスト
     for _, row in df.iterrows():
         img_path = os.path.join(image_dir, row['class_name'], row['id'])
         image = Image.open(img_path).convert('RGB')
         image = image.resize((32, 32))  # サイズを32x32にリサイズ（必要に応じて変更）
         images.append(np.array(image))
         labels.append(row['label'])
+        file_names.append(row['id'])  # ファイル名をリストに追加
     
     # NumPy配列に変換
     images = np.array(images)
@@ -41,4 +43,4 @@ def load_images(df, image_dir, num_classes):
     # クラスラベルをカテゴリカル形式に変換
     labels = to_categorical(labels, num_classes=num_classes)
     
-    return images, labels
+    return images, labels, file_names
