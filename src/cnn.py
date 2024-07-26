@@ -94,7 +94,7 @@ def save_predictions_to_csv(model, x_test, y_test, class_names, test_file_names)
         results[f'{class_name}'] = predicted_probabilities[:, i]
 
     results_df = pd.DataFrame(results)
-    results_df.to_csv('predictions.csv', index=False)
+    results_df.to_csv('predictions_cnn.csv', index=False)
 
 
 def plot_confusion_matrix(y_true, y_pred, class_names):
