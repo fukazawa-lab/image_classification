@@ -71,7 +71,8 @@ def build_and_train_model(x_train, y_train, x_test, y_test, num_classes):
 
     return model
 
-def save_predictions_to_csv(model, x_test, y_test, class_names):
+
+def save_predictions_to_csv(model, x_test, y_test, class_names, test_file_names):
     # 予測の取得
     predictions = model.predict(x_test)
     predicted_classes = np.argmax(predictions, axis=1)
@@ -79,7 +80,7 @@ def save_predictions_to_csv(model, x_test, y_test, class_names):
     
     # 予測結果の DataFrame を作成
     results = {
-        'file_name': [f"image_{i}.jpg" for i in range(len(predicted_classes))],
+        'file_name': test_file_names,  # ファイル名を追加
         'predicted_class': predicted_classes,
     }
     
