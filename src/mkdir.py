@@ -1,3 +1,5 @@
+import os
+
 def create_class_directories(base_dir, class_names):
     """
     Create folders for each class inside a given base directory.
