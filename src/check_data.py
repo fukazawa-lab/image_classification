@@ -27,7 +27,7 @@ def load_data(data_parent_dir, class_names):
                 # 画像を開いてリサイズ、RGBに変換
                 with Image.open(image_path) as img:
                     img = img.convert('RGB')
-                    img = img.resize((32, 32))  # 32x32にリサイズ
+                    img = img.resize((224, 224))  # 32x32にリサイズ
 
                     # 日付と時間でファイル名を作成
                     current_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
