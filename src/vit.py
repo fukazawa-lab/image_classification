@@ -9,6 +9,7 @@ from PIL import Image
 import sklearn.metrics as metrics
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
 # データセットクラスの定義
 class CustomDataset(Dataset):
@@ -35,7 +36,30 @@ def collate_fn(batch):
     input_ids = torch.cat([item['pixel_values'] for item in batch])
     labels = torch.cat([item['label'].unsqueeze(0) for item in batch])
     return {'pixel_values': input_ids, 'labels': labels}
+    from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from transformers import Trainer, TrainingArguments, ViTFeatureExtractor, ViTForImageClassification
+import torch.nn as nn
+from torch.utils.data import DataLoader
+
+# メトリクス計算関数
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    preds = logits.argmax(-1)  # モデルの予測結果を取得
+
+    # Accuracy（精度）の計算
+    accuracy = accuracy_score(labels, preds)
     
+    # Precision（精密度）, Recall（再現率）, F1の計算（平均は'macro'を使用）
+    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='macro', zero_division=0)
+    
+    # 各メトリクスを辞書にまとめて返す
+    return {
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+    }
+
 def train_model(train_df, val_df, class_names, data_folder, num_labels=10, dropout_prob=0.1):
     # Feature extractorとデータセットの初期化
     feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224-in21k')
@@ -66,8 +90,11 @@ def train_model(train_df, val_df, class_names, data_folder, num_labels=10, dropo
         logging_dir='./logs',
         logging_steps=10,
         save_total_limit=1,  # 最新の1つだけを保存
-        eval_strategy="epoch",  # ここを修正
-        save_strategy="epoch",
+        evaluation_strategy="epoch",  # エポックごとに評価
+        save_strategy="epoch",        # エポックごとに保存
+        load_best_model_at_end=True,  # 最良モデルを最後にロード
+        metric_for_best_model="f1",   # 最良モデルの指標をF1スコアに変更
+        greater_is_better=True,       # メトリックが大きいほど良い
     )
 
     # Trainerの設定と訓練
@@ -75,12 +102,16 @@ def train_model(train_df, val_df, class_names, data_folder, num_labels=10, dropo
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=val_dataset,  # ここを追加
+        eval_dataset=val_dataset,  # バリデーションデータセット
         data_collator=collate_fn,
+        compute_metrics=compute_metrics,  # メトリクス計算関数を追加
     )
 
+    # 訓練を実施
     trainer.train()
-    model.save_pretrained('./model')  # モデルを保存
+
+    # トレーニング後に最良モデルを保存
+    model.save_pretrained('./model')
 
     return trainer
 
@@ -101,17 +132,17 @@ def evaluate_model(trainer, val_df, class_names, data_folder, test_file_names):
     recall = metrics.recall_score(labels, preds, average='macro')
     confusion_matrix = metrics.confusion_matrix(labels, preds)
 
-    print(f"Accuracy: {accuracy}")
-    print(f"Precision: {precision}")
-    print(f"Recall: {recall}")
+    # print(f"Accuracy: {accuracy}")
+    # print(f"Precision: {precision}")
+    # print(f"Recall: {recall}")
 
     # クラスごとの精度
-    class_accuracy = confusion_matrix.diagonal() / confusion_matrix.sum(axis=1)
-    for idx, class_name in enumerate(class_names):
-        print(f"Accuracy for class {class_name}: {class_accuracy[idx]}")
+    # class_accuracy = confusion_matrix.diagonal() / confusion_matrix.sum(axis=1)
+    # for idx, class_name in enumerate(class_names):
+    #     print(f"Accuracy for class {class_name}: {class_accuracy[idx]}")
 
-    print("Confusion Matrix:")
-    print(confusion_matrix)
+    # print("Confusion Matrix:")
+    # print(confusion_matrix)
 
     # 混同行列のプロット
     plt.figure(figsize=(10, 8))
