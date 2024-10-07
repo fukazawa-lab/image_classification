@@ -1,4 +1,5 @@
 import os
+import re  # 正規表現を使用するためにインポート
 
 def create_class_directories(base_dir, class_names):
     """
@@ -21,8 +22,12 @@ def create_class_directories(base_dir, class_names):
             print(f"■エラー！！！■クラス名に半角スペースが含まれています: '{class_name}'")
             return  # エラーが発生した場合は処理を中止
         
+        # Check for non-alphanumeric characters excluding half-width symbols
+        if not re.match("^[a-zA-Z0-9!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~]*$", class_name):
+            print(f"■エラー！！！■クラス名に英数字と半角記号以外の文字が含まれています: '{class_name}'")
+            return  # エラーが発生した場合は処理を中止
+
         class_dir = os.path.join(base_dir, class_name)
         os.makedirs(class_dir, exist_ok=True)
 
     print("ディレクトリを作成しました。")
-
