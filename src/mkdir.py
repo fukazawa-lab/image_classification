@@ -16,7 +16,13 @@ def create_class_directories(base_dir, class_names):
 
     # Loop through the class names and create subdirectories for each
     for class_name in class_names:
+        # Check for half-width spaces in the class name
+        if ' ' in class_name:
+            print(f"■エラー！！！■クラス名に半角スペースが含まれています: '{class_name}'")
+            return  # エラーが発生した場合は処理を中止
+        
         class_dir = os.path.join(base_dir, class_name)
         os.makedirs(class_dir, exist_ok=True)
 
-    print(f"ディレクトリを作成しました。")
+    print("ディレクトリを作成しました。")
+
