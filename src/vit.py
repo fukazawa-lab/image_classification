@@ -1,181 +1,132 @@
-import os
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from transformers import ViTFeatureExtractor, ViTForImageClassification, TrainingArguments, Trainer
-from PIL import Image
-import sklearn.metrics as metrics
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix, classification_report
 import seaborn as sns
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+import tensorflow as tf
+from tensorflow.keras.utils import to_categorical
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 
-# データセットクラスの定義
-class CustomDataset(Dataset):
-    def __init__(self, df, feature_extractor, image_dir):
-        self.df = df
-        self.feature_extractor = feature_extractor
-        self.image_dir = image_dir
+def build_and_train_model(x_train, y_train, x_test, y_test, num_classes):
+    # モデルの定義
+    in_shape = (32, 32, 3)
+    model = tf.keras.models.Sequential([
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same', input_shape=in_shape),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(32, (3, 3), padding='same'),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Conv2D(64, (3, 3), padding='same'),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.MaxPooling2D(pool_size=(2, 2)),
+        tf.keras.layers.Dropout(0.25),
+        tf.keras.layers.Flatten(),
+        tf.keras.layers.Dense(512),
+        tf.keras.layers.Activation('relu'),
+        tf.keras.layers.Dropout(0.5),
+        tf.keras.layers.Dense(num_classes),
+        tf.keras.layers.Activation('softmax')
+    ])
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-    def __len__(self):
-        return len(self.df)
+    # モデルの学習
+    history = model.fit(x_train, y_train,
+                        batch_size=128,
+                        epochs=100,
+                        verbose=1,
+                        validation_data=(x_test, y_test))
 
-    def __getitem__(self, idx):
-        img_name = self.df.iloc[idx]['id']
-        label = self.df.iloc[idx]['label']
-        class_name = self.df.iloc[idx]['class_name']
-        img_path = os.path.join(self.image_dir, class_name, img_name)
-        image = Image.open(img_path).convert('RGB')
-        inputs = self.feature_extractor(images=image, return_tensors="pt")
-        inputs['label'] = torch.tensor(label, dtype=torch.long)
-        return inputs
+    # モデルの評価
+    test_loss, test_acc = model.evaluate(x_test, y_test, verbose=2)
+    print(f"Test accuracy: {test_acc}")
 
-# データセットのラベル形式を整える関数
-def collate_fn(batch):
-    input_ids = torch.cat([item['pixel_values'] for item in batch])
-    labels = torch.cat([item['label'].unsqueeze(0) for item in batch])
-    return {'pixel_values': input_ids, 'labels': labels}
-    from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-from transformers import Trainer, TrainingArguments, ViTFeatureExtractor, ViTForImageClassification
-import torch.nn as nn
-from torch.utils.data import DataLoader
+    # 学習過程のプロット
+    plt.figure(figsize=(12, 6))
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'], label='Training Accuracy')
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+    plt.title('Model Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    plt.legend()
 
-# メトリクス計算関数
-def compute_metrics(eval_pred):
-    logits, labels = eval_pred
-    preds = logits.argmax(-1)  # モデルの予測結果を取得
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'], label='Training Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.title('Model Loss')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
 
-    # Accuracy（精度）の計算
-    accuracy = accuracy_score(labels, preds)
+    plt.savefig('training_history.png')
+    plt.show()
+
+    return model
+
+def save_predictions_to_csv(model, x_test, y_test, class_names, test_file_names):
+    # 予測の取得
+    predictions = model.predict(x_test)
+    predicted_classes = np.argmax(predictions, axis=1)
+    predicted_probabilities = predictions
     
-    # Precision（精密度）, Recall（再現率）, F1の計算（平均は'macro'を使用）
-    precision, recall, f1, _ = precision_recall_fscore_support(labels, preds, average='macro', zero_division=0)
+    # クラスラベルをクラス名に変換
+    predicted_labels = [class_names[i] for i in predicted_classes]
     
-    # 各メトリクスを辞書にまとめて返す
-    return {
-        'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1': f1,
+    # `y_test`がNumPy配列で、整数ラベルであると仮定
+    true_labels = [class_names[i] for i in np.argmax(y_test, axis=1)]
+    
+    # 予測結果の DataFrame を作成
+    results = {
+        'file_name': test_file_names,  # ファイル名を追加
+        'True_Label': true_labels,     # 真のラベル
+        'Predicted_Label': predicted_labels,  # 予測ラベル
     }
+    
+    for i, class_name in enumerate(class_names):
+        results[f'{class_name}'] = predicted_probabilities[:, i]
 
-def train_model(train_df, val_df, class_names, data_folder, num_labels=10, dropout_prob=0.1):
-    # Feature extractorとデータセットの初期化
-    feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224-in21k')
-    train_dataset = CustomDataset(train_df, feature_extractor, data_folder)
-    val_dataset = CustomDataset(val_df, feature_extractor, data_folder)  # バリデーションデータセットの追加
-
-    # データローダーの定義
-    train_dataloader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=collate_fn)
-    val_dataloader = DataLoader(val_dataset, batch_size=8, shuffle=False, collate_fn=collate_fn)  # バリデーションデータローダーの追加
-
-    # ViTモデルの読み込み
-    model = ViTForImageClassification.from_pretrained('google/vit-base-patch16-224-in21k', num_labels=num_labels)
-
-    # ViTモデルの全結合層にドロップアウトを含む新しい層を追加
-    model.classifier = nn.Sequential(
-        nn.Dropout(dropout_prob),
-        nn.Linear(model.config.hidden_size, num_labels)
-    )
-
-    # 訓練のための設定
-    training_args = TrainingArguments(
-        output_dir='./results',
-        num_train_epochs=10,
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
-        warmup_steps=500,
-        weight_decay=0.01,
-        logging_dir='./logs',
-        logging_steps=10,
-        save_total_limit=1,  # 最新の1つだけを保存
-        evaluation_strategy="epoch",  # エポックごとに評価
-        save_strategy="epoch",        # エポックごとに保存
-        load_best_model_at_end=True,  # 最良モデルを最後にロード
-        metric_for_best_model="f1",   # 最良モデルの指標をF1スコアに変更
-        greater_is_better=True,       # メトリックが大きいほど良い
-    )
-
-    # Trainerの設定と訓練
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,  # バリデーションデータセット
-        data_collator=collate_fn,
-        compute_metrics=compute_metrics,  # メトリクス計算関数を追加
-    )
-
-    # 訓練を実施
-    trainer.train()
-
-    # トレーニング後に最良モデルを保存
-    model.save_pretrained('./model')
-
-    return trainer
+    results_df = pd.DataFrame(results)
+    results_df.to_csv('predictions_cnn.csv', index=False)
 
 
-def evaluate_model(trainer, val_df, class_names, data_folder, test_file_names):
-    # バリデーションデータセットの初期化
-    feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224-in21k')
-    val_dataset = CustomDataset(val_df, feature_extractor, data_folder)
-
-    # モデル評価
-    predictions = trainer.predict(val_dataset)
-    preds = np.argmax(predictions.predictions, axis=1)
-    labels = predictions.label_ids
-
-    # 精度、適合率、再現率、混同行列の計算
-    accuracy = metrics.accuracy_score(labels, preds)
-    precision = metrics.precision_score(labels, preds, average='macro')
-    recall = metrics.recall_score(labels, preds, average='macro')
-    confusion_matrix = metrics.confusion_matrix(labels, preds)
-
-    # print(f"Accuracy: {accuracy}")
-    # print(f"Precision: {precision}")
-    # print(f"Recall: {recall}")
-
-    # クラスごとの精度
-    # class_accuracy = confusion_matrix.diagonal() / confusion_matrix.sum(axis=1)
-    # for idx, class_name in enumerate(class_names):
-    #     print(f"Accuracy for class {class_name}: {class_accuracy[idx]}")
-
-    # print("Confusion Matrix:")
-    # print(confusion_matrix)
-
-    # 混同行列のプロット
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(confusion_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
+def plot_confusion_matrix(y_true, y_pred, class_names):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(10, 7))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
     plt.xlabel('Predicted')
     plt.ylabel('True')
     plt.title('Confusion Matrix')
+    plt.savefig('confusion_matrix.png')
     plt.show()
 
-    # 各クラスの詳細なレポートを出力
-    report = metrics.classification_report(labels, preds, target_names=class_names)
-    print(report)
+def print_classification_report(y_true, y_pred, class_names):
+    report = classification_report(y_true, y_pred, target_names=class_names)
+    print("Classification Report:\n", report)
+    with open('classification_report.txt', 'w') as f:
+        f.write(report)
 
-    # 予測結果をCSVに保存
-    results_df = pd.DataFrame(predictions.predictions, columns=[f'Class_{i}' for i in range(len(class_names))])
-    results_df['True_Label'] = [class_names[label] for label in labels]
-    results_df['Predicted_Label'] = [class_names[pred] for pred in preds]
-    results_df['File_Name'] = test_file_names  # ファイル名を追加
-    
-    # クラス名を列として使用
-    results_df = results_df.rename(columns={f'Class_{i}': class_name for i, class_name in enumerate(class_names)})
-    
-    results_df.to_csv('predictions_vit.csv', index=False)
-    
 if __name__ == "__main__":
-    # 例としてデータフレームとクラス名を設定します。実際にはこれらを適切に定義してください。
-    class_names = ["class1", "class2", "class3"]  # 例としてクラス名を設定
-    data = [{'id': 'image1.jpg', 'label': 0, 'class_name': 'class1'}, {'id': 'image2.jpg', 'label': 1, 'class_name': 'class2'}, ...]  # データを設定
-    train_df = pd.DataFrame(data)  # トレーニングデータフレーム
-    val_df = pd.DataFrame(data)  # バリデーションデータフレーム
+    # 例としてデータを生成
+    # x_train, y_train, x_test, y_test の準備
+    # データローダーや前処理が必要
 
-    # モデルの訓練
-    trainer = train_model(train_df, val_df, class_names, "path_to_images_folder")
+    num_classes = len(class_names)
     
-    # モデルの評価
-    evaluate_model(trainer, val_df, class_names, "path_to_images_folder", val_df['id'].tolist())
+    # モデルの構築と学習
+    model = build_and_train_model(x_train, y_train, x_test, y_test, num_classes)
+    
+    # 予測結果を CSV に保存
+    save_predictions_to_csv(model, x_test, y_test, class_names)
+
+    # 混同行列のプロット
+    y_test_classes = np.argmax(y_test, axis=1)
+    y_pred_classes = np.argmax(model.predict(x_test), axis=1)
+    plot_confusion_matrix(y_test_classes, y_pred_classes, class_names)
