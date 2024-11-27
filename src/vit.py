@@ -10,6 +10,7 @@ import sklearn.metrics as metrics
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support
+from scipy.special import softmax
 
 # データセットクラスの定義
 class CustomDataset(Dataset):
@@ -141,16 +142,21 @@ def evaluate_model(trainer, val_df, class_names, data_folder, test_file_names):
     report = metrics.classification_report(labels, preds, target_names=class_names)
     print(report)
 
-    # 予測結果をCSVに保存
-    results_df = pd.DataFrame(predictions.predictions, columns=[f'Class_{i}' for i in range(len(class_names))])
-    results_df['True_Label'] = [class_names[label] for label in labels]
-    results_df['Predicted_Label'] = [class_names[pred] for pred in preds]
-    results_df['File_Name'] = test_file_names  # ファイル名を追加
+
+
+    # ロジットを確率に変換
+    probabilities = softmax(predictions.predictions, axis=1)
+
+    # DataFrameに確率を保存する場合
+    prob_results_df = pd.DataFrame(probabilities, columns=[f'Class_{i}' for i in range(len(class_names))])
+    prob_results_df['True_Label'] = [class_names[label] for label in labels]
+    prob_results_df['Predicted_Label'] = [class_names[pred] for pred in preds]
+    prob_results_df['File_Name'] = test_file_names
+
+    # クラス名を列名に変更
+    prob_results_df = prob_results_df.rename(columns={f'Class_{i}': class_name for i, class_name in enumerate(class_names)})
     
-    # クラス名を列として使用
-    results_df = results_df.rename(columns={f'Class_{i}': class_name for i, class_name in enumerate(class_names)})
-    
-    results_df.to_csv('predictions_vit.csv', index=False)
+    prob_results_df.to_csv('predictions_vit.csv', index=False)
     
 if __name__ == "__main__":
     # 例としてデータフレームとクラス名を設定します。実際にはこれらを適切に定義してください。
