@@ -137,7 +137,6 @@ def train_model(
         per_device_eval_batch_size=8,
         warmup_steps=500,
         weight_decay=0.01,
-        logging_dir="./logs",
         logging_steps=10,
         save_total_limit=1,
         eval_strategy="epoch",
@@ -281,6 +280,7 @@ if __name__ == "__main__":
     val_df = pd.DataFrame(data)
 
     data_folder = "path_to_images_folder"
+    
 
     trainer = train_model(
         train_df,
