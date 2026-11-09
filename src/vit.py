@@ -4,7 +4,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
-from transformers import ViTFeatureExtractor, ViTForImageClassification, TrainingArguments, Trainer
+from transformers import ViTImageProcessor, ViTForImageClassification, TrainingArguments, Trainer
 from PIL import Image
 import sklearn.metrics as metrics
 import matplotlib.pyplot as plt
