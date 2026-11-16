@@ -105,6 +105,137 @@ def print_classification_report(y_true, y_pred, class_names):
     with open('classification_report.txt', 'w') as f:
         f.write(report)
 
+# Integrated GradientsによるResNetの可視化
+def visualize_integrated_gradients(model, x_test, y_test, class_names, steps=50):
+
+    def integrated_gradients(image, target):
+        x = tf.cast(image, tf.float32)
+        alphas = tf.linspace(0.0, 1.0, steps + 1)
+        inputs = alphas[:, None, None, None] * x
+
+        with tf.GradientTape() as tape:
+            tape.watch(inputs)
+            scores = model(inputs, training=False)[:, target]
+
+        grads = tape.gradient(scores, inputs)
+        avg_grads = tf.reduce_mean((grads[:-1] + grads[1:]) / 2, axis=0)
+        ig = x * avg_grads
+
+        heatmap = tf.reduce_sum(tf.abs(ig), axis=-1).numpy()
+        return heatmap / (heatmap.max() + 1e-8)
+
+    rng = np.random.default_rng(42)
+    y_true = np.argmax(y_test, axis=1)
+
+    fig, axes = plt.subplots(
+        len(class_names), 3,
+        figsize=(12, 3 * len(class_names)),
+        squeeze=False
+    )
+
+    for c, name in enumerate(class_names):
+        indices = np.where(y_true == c)[0]
+        if len(indices) == 0:
+            continue
+
+        idx = rng.choice(indices)
+        image = x_test[idx]
+
+        pred = np.argmax(model.predict(image[None], verbose=0)[0])
+        heatmap = integrated_gradients(image, int(pred))
+
+        img = image.astype(float)
+        if img.max() > 1:
+            img /= 255.0
+
+        axes[c, 0].imshow(img)
+        axes[c, 0].set_title(f"True: {name} / Pred: {class_names[pred]}")
+
+        axes[c, 1].imshow(heatmap, cmap="jet", vmin=0, vmax=1)
+        axes[c, 1].set_title("Integrated Gradients")
+
+        axes[c, 2].imshow(img)
+        axes[c, 2].imshow(heatmap, cmap="jet", alpha=0.5, vmin=0, vmax=1)
+        axes[c, 2].set_title("Overlay")
+
+        for ax in axes[c]:
+            ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
+# OcclusionによるResNetの可視化
+def visualize_occlusion(model, x_test, y_test, class_names, patch=8, stride=4):
+
+    def occlusion(image, target):
+        h, w, _ = image.shape
+        original = model.predict(image[None], verbose=0)[0, target]
+        heatmap = np.zeros((h, w))
+        counts = np.zeros((h, w))
+
+        ys = sorted(set(range(0, max(h-patch+1, 1), stride)) | {max(h-patch, 0)})
+        xs = sorted(set(range(0, max(w-patch+1, 1), stride)) | {max(w-patch, 0)})
+        positions = [(y, x) for y in ys for x in xs]
+        images = []
+
+        # 画像の一部を順番に隠す
+        for y, x in positions:
+            img = image.copy()
+            img[y:y+patch, x:x+patch] = 0
+            images.append(img)
+
+        # 遮蔽による予測確率の変化
+        preds = model.predict(
+            np.array(images), batch_size=64, verbose=0
+        )[:, target]
+
+        for (y, x), pred in zip(positions, preds):
+            heatmap[y:y+patch, x:x+patch] += original - pred
+            counts[y:y+patch, x:x+patch] += 1
+
+        heatmap = np.maximum(heatmap / np.maximum(counts, 1), 0)
+        return heatmap / (heatmap.max() + 1e-8)
+
+    rng = np.random.default_rng(42)
+    y_true = np.argmax(y_test, axis=1)
+
+    fig, axes = plt.subplots(
+        len(class_names), 3,
+        figsize=(12, 3 * len(class_names)),
+        squeeze=False
+    )
+
+    for c, name in enumerate(class_names):
+        indices = np.where(y_true == c)[0]
+        if len(indices) == 0:
+            continue
+
+        idx = rng.choice(indices)
+        image = x_test[idx]
+
+        pred = np.argmax(model.predict(image[None], verbose=0)[0])
+        heatmap = occlusion(image, int(pred))
+
+        img = image.astype(float)
+        if img.max() > 1:
+            img /= 255.0
+
+        axes[c, 0].imshow(img)
+        axes[c, 0].set_title(f"True: {name} / Pred: {class_names[pred]}")
+
+        axes[c, 1].imshow(heatmap, cmap="jet", vmin=0, vmax=1)
+        axes[c, 1].set_title("Occlusion")
+
+        axes[c, 2].imshow(img)
+        axes[c, 2].imshow(heatmap, cmap="jet", alpha=0.5, vmin=0, vmax=1)
+        axes[c, 2].set_title("Overlay")
+
+        for ax in axes[c]:
+            ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
 if __name__ == "__main__":
     # 例としてデータを生成
     # x_train, y_train, x_test, y_test の準備
