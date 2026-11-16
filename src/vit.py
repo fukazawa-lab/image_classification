@@ -334,6 +334,100 @@ def visualize_integrated_gradients(
     plt.tight_layout()
     plt.show()
 
+
+# OcclusionによるViTの可視化
+def visualize_occlusion(
+    trainer, val_df, class_names, data_folder, patch=16, stride=16
+):
+    model = trainer.model
+    model.eval()
+    device = next(model.parameters()).device
+    processor = ViTImageProcessor.from_pretrained(MODEL_NAME)
+
+    # Occlusion
+    def occlusion(image, target):
+        x = processor(images=image, return_tensors="pt")["pixel_values"].to(device)
+        _, _, h, w = x.shape
+
+        with torch.no_grad():
+            original = torch.softmax(
+                model(pixel_values=x).logits, dim=1
+            )[0, target].item()
+
+        heatmap = np.zeros((h, w))
+        counts = np.zeros((h, w))
+
+        ys = sorted(set(range(0, max(h-patch+1, 1), stride)) | {max(h-patch, 0)})
+        xs = sorted(set(range(0, max(w-patch+1, 1), stride)) | {max(w-patch, 0)})
+        positions = [(y, x0) for y in ys for x0 in xs]
+
+        # 画像の一部を順番に隠す
+        images = []
+        for y, x0 in positions:
+            img = x[0].clone()
+            img[:, y:y+patch, x0:x0+patch] = 0
+            images.append(img)
+
+        # 隠したときの予測確率の変化
+        preds = []
+        with torch.no_grad():
+            for i in range(0, len(images), 16):
+                batch = torch.stack(images[i:i+16])
+                prob = torch.softmax(
+                    model(pixel_values=batch).logits, dim=1
+                )[:, target]
+                preds.extend(prob.cpu().numpy())
+
+        for (y, x0), pred in zip(positions, preds):
+            heatmap[y:y+patch, x0:x0+patch] += original - pred
+            counts[y:y+patch, x0:x0+patch] += 1
+
+        heatmap = np.maximum(heatmap / np.maximum(counts, 1), 0)
+        return heatmap / (heatmap.max() + 1e-8)
+
+    # 各クラスから1枚ずつ可視化
+    rng = np.random.default_rng(42)
+    fig, axes = plt.subplots(
+        len(class_names), 3,
+        figsize=(12, 3 * len(class_names)),
+        squeeze=False
+    )
+
+    for c, name in enumerate(class_names):
+        rows = val_df[val_df["label"].astype(int) == c]
+        if rows.empty:
+            continue
+
+        row = rows.iloc[rng.integers(len(rows))]
+        path = os.path.join(data_folder, row["class_name"], row["id"])
+
+        with Image.open(path) as im:
+            image = im.convert("RGB")
+
+        x = processor(images=image, return_tensors="pt")["pixel_values"].to(device)
+
+        with torch.no_grad():
+            pred = model(pixel_values=x).logits.argmax(dim=1).item()
+
+        heatmap = occlusion(image, pred)
+        img = np.asarray(image.resize((heatmap.shape[1], heatmap.shape[0])))
+
+        axes[c, 0].imshow(img)
+        axes[c, 0].set_title(f"True: {name} / Pred: {class_names[pred]}")
+
+        axes[c, 1].imshow(heatmap, cmap="jet", vmin=0, vmax=1)
+        axes[c, 1].set_title("Occlusion")
+
+        axes[c, 2].imshow(img)
+        axes[c, 2].imshow(heatmap, cmap="jet", alpha=0.5, vmin=0, vmax=1)
+        axes[c, 2].set_title("Overlay")
+
+        for ax in axes[c]:
+            ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
 if __name__ == "__main__":
 
     class_names = ["class1", "class2", "class3"]
