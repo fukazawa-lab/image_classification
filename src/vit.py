@@ -267,6 +267,73 @@ def evaluate_model(
     return prob_results_df
 
 
+# Integrated GradientsによるViTの可視化
+def visualize_integrated_gradients(
+    trainer, val_df, class_names, data_folder, steps=50
+):
+    model = trainer.model
+    model.eval()
+    device = next(model.parameters()).device
+    processor = ViTImageProcessor.from_pretrained(MODEL_NAME)
+
+    # Integrated Gradients
+    def integrated_gradients(image, target):
+        x = processor(images=image, return_tensors="pt")["pixel_values"].to(device)
+        alphas = torch.linspace(0, 1, steps + 1, device=device)
+        inputs = alphas[:, None, None, None] * x
+        inputs.requires_grad_(True)
+
+        scores = model(pixel_values=inputs).logits[:, target]
+        grads = torch.autograd.grad(scores.sum(), inputs)[0]
+        avg_grads = ((grads[:-1] + grads[1:]) / 2).mean(dim=0)
+        ig = (x[0] * avg_grads).abs().sum(dim=0)
+
+        heatmap = ig.detach().cpu().numpy()
+        return heatmap / (heatmap.max() + 1e-8)
+
+    # 各クラスから1枚ずつ可視化
+    rng = np.random.default_rng(42)
+    fig, axes = plt.subplots(
+        len(class_names), 3,
+        figsize=(12, 3 * len(class_names)),
+        squeeze=False
+    )
+
+    for c, name in enumerate(class_names):
+        rows = val_df[val_df["label"].astype(int) == c]
+        if rows.empty:
+            continue
+
+        row = rows.iloc[rng.integers(len(rows))]
+        path = os.path.join(data_folder, row["class_name"], row["id"])
+
+        with Image.open(path) as im:
+            image = im.convert("RGB")
+
+        x = processor(images=image, return_tensors="pt")["pixel_values"].to(device)
+
+        with torch.no_grad():
+            pred = model(pixel_values=x).logits.argmax(dim=1).item()
+
+        heatmap = integrated_gradients(image, pred)
+        img = np.asarray(image.resize((heatmap.shape[1], heatmap.shape[0])))
+
+        axes[c, 0].imshow(img)
+        axes[c, 0].set_title(f"True: {name} / Pred: {class_names[pred]}")
+
+        axes[c, 1].imshow(heatmap, cmap="jet", vmin=0, vmax=1)
+        axes[c, 1].set_title("Integrated Gradients")
+
+        axes[c, 2].imshow(img)
+        axes[c, 2].imshow(heatmap, cmap="jet", alpha=0.5, vmin=0, vmax=1)
+        axes[c, 2].set_title("Overlay")
+
+        for ax in axes[c]:
+            ax.axis("off")
+
+    plt.tight_layout()
+    plt.show()
+
 if __name__ == "__main__":
 
     class_names = ["class1", "class2", "class3"]
